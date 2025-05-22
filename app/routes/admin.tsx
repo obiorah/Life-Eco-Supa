@@ -5,14 +5,15 @@ import { useLoaderData, useActionData, useNavigation, useRouteError, isRouteErro
 import { useUserRole } from "~/hooks/useUserRole";
 import { AccessDenied } from "~/components/AccessDenied";
 import { cn } from "~/lib/utils";
-import { UsersTabContent } from "~/components/admin/UsersTabContent";
+import { UsersTabContent } from "~/components/admin/UsersTabContent"; // Removed Fragment, useEffect
 import { GroupsManagement } from "~/components/admin/GroupsManagement";
 import { EssenceSettings } from "~/components/admin/EssenceSettings";
 import { BackupRestore } from "~/components/admin/BackupRestore";
-import supabaseAdmin from "~/lib/supabase-admin"; // Import Supabase admin client
+import { getSupabaseAdmin } from "~/utils/supabase.server"; // Import the utility function
 import type { Group, User, UserRole } from "~/types/admin"; // Import types
 
 export const meta: MetaFunction = () => {
+
   return [
     { title: "Life Economy - Admin" },
     { name: "description", content: "Admin section for Life Economy" },
@@ -23,6 +24,9 @@ export const meta: MetaFunction = () => {
 export async function loader({ request }: LoaderFunctionArgs) {
   console.log("[Server Loader - admin] Starting loader execution...");
   // TODO: Add proper authentication/authorization check here
+
+  // Use the new utility function to get the Supabase admin client
+  const supabaseAdmin = await getSupabaseAdmin();
 
   let profilesData, profilesError, groupsData, groupsError;
 
@@ -110,6 +114,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
 export async function action({ request }: ActionFunctionArgs) {
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
+  // Explicitly get the Supabase admin client within the action
+  // Use the new utility function to get the Supabase admin client
+  const supabaseAdmin = await getSupabaseAdmin();
+
+
   console.log(`[Server Action - admin] Received intent: ${intent}`);
   console.log("[Server Action - admin] Form Data:", Object.fromEntries(formData)); // Log form data
 
@@ -433,6 +442,7 @@ function SettingsIcon(props: React.SVGProps<SVGSVGElement>) { /* ... icon svg ..
 // Updated MasterTabContent to accept groups and pass them down
 // No changes needed here as it receives the mapped 'users' array
 function MasterTabContent({ groups, users }: { groups: Group[], users: User[] }) {
+
   return (
     <div className="p-4 border rounded-b-md dark:border-gray-700 bg-gray-50 dark:bg-gray-950 space-y-6">
        <GroupsManagement groups={groups} users={users} />
@@ -444,6 +454,7 @@ function MasterTabContent({ groups, users }: { groups: Group[], users: User[] })
 
 // --- Main Admin Component ---
 type AdminTab = "users" | "master";
+
 
 export default function Admin() {
   const loaderData = useLoaderData<typeof loader>();
@@ -544,6 +555,7 @@ export default function Admin() {
 
 // --- Error Boundary ---
 export function ErrorBoundary() {
+
     const error = useRouteError();
     console.error("[Admin ErrorBoundary] Caught error:", error);
 

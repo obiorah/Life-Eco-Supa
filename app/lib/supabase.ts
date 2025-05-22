@@ -6,46 +6,32 @@ import { createClient } from '@supabase/supabase-js';
 const serverSupabaseUrl = process.env.SUPABASE_URL;
 const serverSupabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 
-// --- REMOVED TEMPORARY DEBUG LOGGING ---
-
-
 // Client-side environment variables (accessed via window.ENV)
 // Ensure window.ENV exists before accessing its properties
 const clientSupabaseUrl = typeof window !== 'undefined' && window.ENV ? window.ENV.SUPABASE_URL : undefined;
 const clientSupabaseAnonKey = typeof window !== 'undefined' && window.ENV ? window.ENV.SUPABASE_ANON_KEY : undefined;
 
-// Determine Supabase URL and Key based on environment (server or client)
-const supabaseUrl = typeof document === 'undefined' ? serverSupabaseUrl : clientSupabaseUrl;
-const supabaseAnonKey = typeof document === 'undefined' ? serverSupabaseAnonKey : clientSupabaseAnonKey;
+/**
+ * Initializes and returns the Supabase client.
+ * Throws an error if environment variables are missing on the server.
+ * On the client, it attempts to use window.ENV and logs a warning if variables are missing.
+ */
+export function getSupabaseClient() {
+  const isServer = typeof document === 'undefined';
+  const supabaseUrl = isServer ? serverSupabaseUrl : clientSupabaseUrl;
+  const supabaseAnonKey = isServer ? serverSupabaseAnonKey : clientSupabaseAnonKey;
 
-// Refined check: Throw error only on server if vars are missing during initialization
-if (typeof document === 'undefined') {
   if (!supabaseUrl || !supabaseAnonKey) {
-    // This error will stop the server if env vars are not loaded correctly
-    throw new Error('[supabase.ts Server Init] Supabase URL and Anon Key must be provided in server environment variables.');
+    if (isServer) {
+      throw new Error('[supabase.ts Server Init] Supabase URL and Anon Key must be provided in server environment variables.');
+    } else {
+      console.warn('[supabase.ts Client Init] Supabase URL/Key not immediately available. Ensure ENV is loaded via root loader script.');
+    }
   }
-} else {
-  // Client-side warning if ENV isn't immediately available (might happen before root loader script runs)
-  if (!supabaseUrl || !supabaseAnonKey) {
-     console.warn('[supabase.ts Client Init] Supabase URL/Key not immediately available. Ensure ENV is loaded via root loader script.');
-  }
-}
 
-
-// Create and export the Supabase client (for ANON operations)
-// Use Database generic if you have generated types: createClient<Database>(...)
-// Initialize with potentially undefined values on client, relying on ENV script
-// Add a check to ensure we don't pass undefined to createClient, especially on the server
-if (!supabaseUrl || !supabaseAnonKey) {
-  // This condition should ideally only be met temporarily on the client before ENV loads.
-  // If it happens on the server, the error above should have caught it.
-  console.error("[supabase.ts] CRITICAL: Attempting to initialize Supabase client with missing URL or Key. This should not happen on the server.");
-  // Avoid creating a client that will definitely fail. You might return a dummy object
-  // or handle this case based on your app's needs, but throwing might be safer.
-  // For now, let it proceed but log the error. The subsequent Supabase calls will likely fail.
+  // Ensure we pass strings, even if they were potentially undefined (checks above handle the missing case)
+  return createClient(supabaseUrl || '', supabaseAnonKey || '');
 }
-// Ensure we pass strings, even if they were potentially undefined earlier (though checks should prevent this on server)
-export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '');
 
 // Helper function to get ONLY the necessary client-side environment variables
 // This is called ONLY in the root loader on the server.
@@ -55,7 +41,6 @@ export function getBrowserEnvironment() {
      console.error("getBrowserEnvironment should only be called on the server!");
      return {}; // Or handle appropriately
   }
-  // --- REMOVED TEMPORARY DEBUG LOGGING ---
   return {
     SUPABASE_URL: process.env.SUPABASE_URL,
     SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,

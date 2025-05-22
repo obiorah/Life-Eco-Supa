@@ -11,6 +11,10 @@ import { createReadableStreamFromReadable } from "@remix-run/node";
 import { RemixServer } from "@remix-run/react";
 import { isbot } from "isbot";
 import { renderToPipeableStream } from "react-dom/server";
+import dotenv from 'dotenv';
+dotenv.config();
+
+console.log('SUPABASE_URL in entry.server.tsx:', process.env.SUPABASE_URL);
 
 const ABORT_DELAY = 5_000;
 

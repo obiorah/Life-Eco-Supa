@@ -14,9 +14,8 @@ import { InventoryTable } from "~/components/market/setup/InventoryTable";
 import { AddProductForm } from "~/components/market/setup/AddProductForm";
 import { EditProductModal } from "~/components/market/setup/EditProductModal";
 import { DeleteConfirmationModal } from "~/components/market/setup/DeleteConfirmationModal";
-import { SalesLogTable } from "~/components/market/SalesLogTable";
-import { supabase } from "~/lib/supabase"; // Regular client for most operations
-import supabaseAdmin from "~/lib/supabase-admin"; // Admin client
+import { SalesLogTable } from "~/components/market/SalesLogTable"; 
+import { getSupabaseAdmin } from "~/utils/supabase.server"; 
 
 const MARKET_IMAGES_BUCKET = 'product-images';
 const DEFAULT_PLACEHOLDER_IMAGE_URL = "https://zkpgphfdmdzmmsneuzal.supabase.co/storage/v1/object/public/product-images/placeholder.png";
@@ -76,8 +75,18 @@ function mapDbPurchaseRecordToApp(dbRecord: any): PurchaseRecordWithBuyerDetails
 export async function loader({ request }: LoaderFunctionArgs) {
   console.log("[Loader - market] Fetching market data...");
 
+  const supabaseAdmin = await getSupabaseAdmin();
+
+  if (!supabaseAdmin) {
+     console.error("[Loader - market] Supabase admin client not initialized. Check SUPABASE_SERVICE_KEY environment variable.");
+     return json({ marketplaceItems: [], purchaseRecords: [] }, { status: 500 });
+  }
+
+  console.log("supabaseAdmin:", supabaseAdmin);
+  console.log("typeof supabaseAdmin.from:", typeof supabaseAdmin.from);
+
   // Fetch marketplace items using regular supabase client (RLS applies if any)
-  const { data: marketplaceDbItems, error: itemsError } = await supabase
+  const { data: marketplaceDbItems, error: itemsError } = await supabaseAdmin
     .from('marketplace_items')
     .select('*')
     .order('name', { ascending: true });
@@ -128,6 +137,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
 export async function action({ request }: ActionFunctionArgs) {
   console.log("[Action - market] Received request");
 
+  const supabaseAdmin = await getSupabaseAdmin();
+
+  if (!supabaseAdmin) {
+    console.error("[Action - market] Supabase admin client not initialized. Check SUPABASE_SERVICE_KEY environment variable.");
+    return json({ success: false, error: "Server configuration error: Admin client not initialized.", intent: "unknown" }, { status: 500 });
+  }
+
   let formData: FormData;
   const contentType = request.headers.get("Content-Type");
 
@@ -173,10 +189,6 @@ export async function action({ request }: ActionFunctionArgs) {
         let uploadedImageUrl = DEFAULT_PLACEHOLDER_IMAGE_URL; 
         if (imageFile && imageFile.size > 0) {
           const fileName = `${Date.now()}-${imageFile.name}`;
-          if (!supabaseAdmin || !supabaseAdmin.storage) {
-            console.error("[Action - market] supabaseAdmin or supabaseAdmin.storage is undefined before image upload.");
-            return json({ success: false, error: "Server configuration error for image upload.", intent }, { status: 500 });
-          }
           const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
             .from(MARKET_IMAGES_BUCKET)
             .upload(fileName, imageFile, {
@@ -204,10 +216,6 @@ export async function action({ request }: ActionFunctionArgs) {
           image_url: uploadedImageUrl, 
         };
         
-        if (!supabaseAdmin || !supabaseAdmin.from) {
-            console.error("[Action - market] supabaseAdmin or supabaseAdmin.from is undefined before DB insert.");
-            return json({ success: false, error: "Server configuration error for database operation.", intent }, { status: 500 });
-        }
         const { data: insertedDbItem, error: insertError } = await supabaseAdmin
           .from('marketplace_items')
           .insert(newItemDataForDb)
@@ -267,10 +275,6 @@ export async function action({ request }: ActionFunctionArgs) {
         let oldImageKeyToDelete: string | null = null;
 
         if (imageFile && imageFile.size > 0) {
-          if (!supabaseAdmin || !supabaseAdmin.storage) {
-            console.error("[Action - market] supabaseAdmin or supabaseAdmin.storage is undefined before image upload (edit).");
-            return json({ success: false, error: "Server configuration error for image upload.", intent }, { status: 500 });
-          }
           const fileName = `${Date.now()}-${imageFile.name}`;
           const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
             .from(MARKET_IMAGES_BUCKET)
@@ -302,10 +306,6 @@ export async function action({ request }: ActionFunctionArgs) {
           image_url: newUploadedImageUrl, 
         };
 
-        if (!supabaseAdmin || !supabaseAdmin.from) {
-            console.error("[Action - market] supabaseAdmin or supabaseAdmin.from is undefined before DB update (edit).");
-            return json({ success: false, error: "Server configuration error for database operation.", intent }, { status: 500 });
-        }
         const { data: updatedDbItem, error: updateError } = await supabaseAdmin
           .from('marketplace_items')
           .update(updatedProductDataForDb)
@@ -350,11 +350,6 @@ export async function action({ request }: ActionFunctionArgs) {
 
         if (!productId) {
           return json({ success: false, error: "Missing product ID for deletion.", intent }, { status: 400 });
-        }
-
-        if (!supabaseAdmin || !supabaseAdmin.from || !supabaseAdmin.storage) {
-            console.error("[Action - market] supabaseAdmin client is not fully available for delete operation.");
-            return json({ success: false, error: "Server configuration error for delete operation.", intent }, { status: 500 });
         }
 
         const { error: deleteDbError } = await supabaseAdmin
@@ -406,11 +401,6 @@ export async function action({ request }: ActionFunctionArgs) {
         const quantity = parseInt(quantityStr, 10);
         if (isNaN(quantity) || quantity <= 0) {
           return json({ success: false, error: "Invalid quantity.", intent }, { status: 400 });
-        }
-        
-        if (!supabaseAdmin || !supabaseAdmin.from) {
-            console.error("[Action - market] supabaseAdmin or supabaseAdmin.from is undefined before purchase operation. Check .env for SUPABASE_SERVICE_KEY.");
-            return json({ success: false, error: "Server configuration error for purchase operation. Admin client may not be initialized.", intent }, { status: 500 });
         }
 
         const { data: itemDb, error: itemError } = await supabaseAdmin
@@ -769,27 +759,44 @@ export default function Marketplace() {
     console.log("[Marketplace Route Effect] Processing actionData:", actionData);
     processedActionDataKeyRef.current = currentActionKey;
 
-    if (actionData.intent === 'purchaseItem' && actionData.success) {
-      console.log("[Marketplace Route Effect] Purchase successful. Processing action data for purchase:", actionData);
-      
-      if (actionData.finalBalance !== undefined && actionData.userId && currentUser && currentUser.id === actionData.userId) {
-        if (currentUser.balance !== actionData.finalBalance) {
-          console.log(`[Marketplace Route Effect] Updating balance for user ${actionData.userId} from ${currentUser.balance} to ${actionData.finalBalance}`);
-          setCurrentUser({ ...currentUser, balance: actionData.finalBalance });
-        }
-      }
-      if (actionData.updatedItem) {
-        console.log(`[Marketplace Route Effect] Updating marketplace item ID: ${(actionData.updatedItem as MarketplaceItem).id}`);
-        updateMarketplaceItem(actionData.updatedItem as MarketplaceItem); 
-      }
-      if (actionData.purchaseRecord) {
-        console.log(`[Marketplace Route Effect] Adding new purchase record ID: ${(actionData.purchaseRecord as PurchaseRecordWithBuyerDetails).id} to store.`);
-        addPurchaseRecord(actionData.purchaseRecord as PurchaseRecordWithBuyerDetails);
-      }
-    } else if (actionData.success) {
-        console.log(`[Marketplace Route Effect] Successful action '${actionData.intent}', but not 'purchaseItem'. Item:`, (actionData as any).item);
-    } else if (!actionData.success && actionData.error) {
+    if (!actionData.success && actionData.error) {
         console.warn("[Marketplace Route Effect] Action failed:", actionData.error, "Intent:", actionData.intent);
+        return;
+    }
+
+    // Type narrowing based on intent
+    switch (actionData.intent) {
+        case 'purchaseItem': {
+             if (actionData.success) { // Redundant check due to guard clause above, but good for clarity
+                console.log("[Marketplace Route Effect] Purchase successful. Processing action data for purchase:", actionData);
+
+                if (actionData.finalBalance !== undefined && actionData.userId && currentUser && currentUser.id === actionData.userId) {
+                    if (currentUser.balance !== actionData.finalBalance) {
+                        console.log(`[Marketplace Route Effect] Updating balance for user ${actionData.userId} from ${currentUser.balance} to ${actionData.finalBalance}`);
+                        setCurrentUser({ ...currentUser, balance: actionData.finalBalance });
+                    }
+                }
+                if (actionData.updatedItem) {
+                    console.log(`[Marketplace Route Effect] Updating marketplace item ID: ${actionData.updatedItem.id}`);
+                    updateMarketplaceItem(actionData.updatedItem);
+                }
+                if (actionData.purchaseRecord) {
+                    console.log(`[Marketplace Route Effect] Adding new purchase record ID: ${actionData.purchaseRecord.id} to store.`);
+                    addPurchaseRecord(actionData.purchaseRecord);
+                }
+             }
+             break;
+        }
+        case 'addMarketplaceItem': // Add other successful intents here
+        case 'editMarketplaceItem':
+        case 'deleteMarketplaceItem': {
+             if (actionData.success) { // Redundant check
+                console.log(`[Marketplace Route Effect] Successful action '${actionData.intent}'.`);
+             }
+             break;
+        }
+        default:
+             console.warn(`[Marketplace Route Effect] Received successful action with unhandled intent: ${actionData.intent}`);
     }
 
   }, [actionData, setCurrentUser, updateMarketplaceItem, addPurchaseRecord, currentUser]);

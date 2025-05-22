@@ -1,9 +1,8 @@
 import { useState } from "react"; // Removed Fragment, useEffect
 import type { MetaFunction, LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
-import { json } from "@remix-run/node"; // Removed redirect
+import { json } from "@remix-run/node";
 import { useLoaderData, useRouteError, isRouteErrorResponse } from "@remix-run/react"; // Removed Form, useActionData
-import supabaseAdmin from "~/lib/supabase-admin";
-import type { UserProfile } from "~/types/user";
+import { getSupabaseAdmin } from "~/utils/supabase.server"; // Import the new utility function
 import { ChangePasswordModal } from "~/components/settings/ChangePasswordModal"; // Import the component
 
 export const meta: MetaFunction = () => {
@@ -13,21 +12,27 @@ export const meta: MetaFunction = () => {
   ];
 };
 
+import type { UserProfile } from "~/types/user"; // Keep UserProfile import
+
 // Loader updated to use 'profiles' table
 export async function loader({ request }: LoaderFunctionArgs) {
+  // Explicitly get the Supabase admin client within the loader
+  console.log("[Server Loader - settings] Attempting to get Supabase admin client.");
+  const supabase = await getSupabaseAdmin(); // Use the async utility function
+
   const hardcodedUserId = "19c95443-56d2-4dd4-a551-2874c8e73ff6";
   let userProfile: UserProfile | null = null;
   let error: string | null = null;
 
-  console.log(`[Server Loader - settings] Attempting to fetch profile for user ID: ${hardcodedUserId} from 'profiles' table.`);
+  console.log(`[Server Loader - settings] Supabase client obtained. Attempting to fetch profile for user ID: ${hardcodedUserId} from 'profiles' table.`);
 
   if (!hardcodedUserId) {
      throw new Response("User not authenticated", { status: 401 });
   }
 
   try {
-    // *** Changed 'users' to 'profiles' here ***
-    const { data, error: dbError } = await supabaseAdmin
+    console.log("[Server Loader - settings] Supabase admin client obtained successfully.");
+    const { data, error: dbError } = await supabase
       .from('profiles') // Query the profiles table
       .select('id, email, full_name, created_at')
       .eq('id', hardcodedUserId)

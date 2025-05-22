@@ -13,7 +13,7 @@ import { json } from "@remix-run/node";
 import { useEffect } from "react";
 import { Header } from "~/components/Header";
 import { getBrowserEnvironment } from "~/lib/supabase";
-import supabaseAdmin from "~/lib/supabase-admin";
+import { supabaseAdmin } from "~/lib/supabase-admin"; // Import correctly
 import type { UserProfile } from "~/types/user";
 import { useStore } from "~/store/store";
 import type { User as AdminUser, UserRole } from "~/types/admin";
@@ -48,7 +48,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     const hardcodedUserId = "19c95443-56d2-4dd4-a551-2874c8e73ff6";
     console.log("[Server Loader - root] Attempting Supabase ADMIN fetch for auth user:", hardcodedUserId);
 
-    const { data: authUserData, error: authError } = await supabaseAdmin.auth.admin.getUserById(
+    const { data: authUserData, error: authError } = await supabaseAdmin.auth.admin.getUserById( // Use the imported instance
       hardcodedUserId
     );
 
